@@ -1,0 +1,168 @@
+---
+name: bosh
+
+releases:
+  - name: bosh
+    url: https://bosh.io/d/github.com/cloudfoundry/bosh?v=168
+    sha1: 57320a93a7a15e51af4c57d9d9c22706c45c9953
+  - name: bosh-google-cpi
+    url: http://storage.googleapis.com/bosh-stemcells/bosh-google-cpi-5.tgz
+    sha1: c5de3053f233e6ef42c2a4228fa94179d955cc84
+
+resource_pools:
+  - name: vms
+    network: private
+    stemcell:
+      url: http://storage.googleapis.com/bosh-stemcells/light-bosh-stemcell-2968-google-kvm-ubuntu-trusty-go_agent.tgz
+      sha1: ce5a64c3ecef4fd3e6bd633260dfaa7de76540eb
+    cloud_properties:
+      machine_type: n1-standard-2
+      root_disk_size_gb: 40
+      root_disk_type: pd-standard
+
+disk_pools:
+  - name: disks
+    disk_size: 32_768
+    cloud_properties:
+      type: pd-standard
+
+networks:
+  - name: private
+    type: dynamic
+    cloud_properties:
+      network_name: default
+      tags:
+        - bosh
+
+  - name: public
+    type: vip
+
+jobs:
+  - name: bosh
+    instances: 1
+
+    templates:
+      - name: nats
+        release: bosh
+      - name: redis
+        release: bosh
+      - name: postgres
+        release: bosh
+      - name: powerdns
+        release: bosh
+      - name: blobstore
+        release: bosh
+      - name: director
+        release: bosh
+      - name: health_monitor
+        release: bosh
+      - name: cpi
+        release: bosh-google-cpi
+      - name: registry
+        release: bosh-google-cpi
+
+    resource_pool: vms
+    persistent_disk_pool: disks
+
+    networks:
+      - name: private
+        default:
+          - dns
+          - gateway
+      - name: public
+        static_ips:
+          - 104.197.123.230 # <--- Replace with the static IP
+
+    properties:
+      nats:
+        address: 127.0.0.1
+        user: nats
+        password: nats
+
+      redis:
+        listen_address: 127.0.0.1
+        address: 127.0.0.1
+        password: redis
+
+      postgres: &db
+        adapter: postgres
+        host: 127.0.0.1
+        user: postgres
+        password: postgres
+        database: bosh
+
+      dns:
+        address: 104.197.123.230 # <--- Replace with the static IP
+        domain_name: microbosh
+        db: *db
+        recursor: 8.8.8.8
+
+      blobstore:
+        address: 104.197.123.230 # <--- Replace with the static IP
+        provider: dav
+        director:
+          user: director
+          password: director
+        agent:
+          user: agent
+          password: agent
+
+      director:
+        address: 127.0.0.1
+        name: micro-google
+        db: *db
+        cpi_job: cpi
+
+      hm:
+        http:
+          user: hm
+          password: hm
+        director_account:
+          user: admin
+          password: admin
+        resurrector_enabled: true
+
+      ntp: &ntp
+        - 169.254.169.254
+
+      google: &google_properties
+        project: connectedearthsciences	 # <--- Replace with your GCE project
+        json_key: "{\"private_key_id\": \"7a70804f0a8925c21f45b942c1e1730c936ad45a\",\"private_key\": \"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDv6WeWzAJ1fgHo\\n0HxA+BNOQD7+/eqRbCkXPgsW6TmrsoEhtuhhUm/tDMQwqb2I1aTUwU0awVgB4h41\\nPJawjZny/mXHuANX/4GE/wpIuF5o/cD/m7O0RjwpNvZWoyyGVbas4YnMdW4wbG/E\\nkaurA6dsQ2zN7N+ZzGmCJidX+WIeh2hdzjIUJZihx8/kyHCv3F35eFMCxbooDb2e\\nbRZUiGUQEfqlDOqT2TVRYJ3r4fbG2M6aQLR8suXzlw4ldi74NnO1ky4YyutPaJu8\\nl2SAhple5ip55XuptoLx/6j8Eg3/vSTCQmzjmlCwzLoQHkr5uWvQSOAGzOr3TyLg\\nsYH12CsJAgMBAAECggEANc0o/udHUePtN7Gxe7xmT/EWb4av2ObhnCW8xOmOllOU\\no+Pp3xFmqklnoeYe7BXFPjUPPoXHX7y+u3+X54YJ1TV5y70Xet+AwzuSqdY2zeLC\\nKlBXj4EEstVxjuJO9N059zEo/uIC0PcwZWupjNNn8153gwKw7kOqEZbO0erKN0AF\\nVpxTqXOB2IexqKCURRSU2bDYNHqrxF7gx5B+zyGnvoCiwkEaexXyiZecpXwwLqok\\nHWHVklotOIKF65suHCK6CQsiQQlaXSwmynNATGMLv/l3RSX4tgdMGMK0075pzZ/q\\nFq9OcbVJr2ROA7HBfR4etbajKzf4Z3LI2eG9/pbgAQKBgQD+BYg0WM1Jf+ipZyin\\nLCMAHyyyoTTyuyAS7Uym6XKpKk8WdWk1rZNjxRMywNdGX6AQBZG5o3DPSNfGvA+I\\nzE5cpeflZ40KOebB+au+rsp/+kszNl1ugiNZloHS4F4TY4O3dzHf2cYTIq3mgK+H\\nVa4s4Wkreu7f9Q/sJD0JRPscAQKBgQDxx72HmnA8qwQFprXXPwuir5uhro68m52/\\ne15Mn2J2+DxYnQe6eFq6MqWNW+dRXs2JjLlhKWwt20MhMXfl/MrXZohEfdQ/ELDU\\nOrCEJ9QZes9opc1zACyL/1nbXFs9Thtv7i6l3ApaWoJvk/cqXCodTQPQ3xK9l/Sx\\nMbTD7uAvCQKBgBMK9R//fDxDU3zHl/uYSnNq4t3tSdvcfVYN5g4pOAhIfK9RU/bL\\nMV5sWrkWTc0fxA8Pa9I/12girNJgLMXzkvhNE6pV7fPTTWJDRkXAMrwPVm3baHut\\nU9sWdlsJqOPJNQme7OU8HSY4FlNOWFpL6QfCSjERQTEW3P+148F7I1wBAoGBAJS1\\natBd4Aygjv++0vdKEqkEY6/lQmulNzhP8+ci3RgZhFxocRly7zK49fRlA3ib28Vv\\nZZHqPVxTEQ34dCtj+YrUyJl/3yzO4kQWuPz/1ke5rppJ6HyELeIJs8XlH0UsplmI\\n4O4o0cFTDAj+tDY8q7aL6P3uRoOQU/MshGdCpGapAoGAIz1UmJtiite8J0Ql+fwR\\noyJ78qCq/oU6/hLMxDmTtu04EQpCfrta/ipOh7bT4PmteTKj4mq7SfMlKf86/04u\\nmFsnMjKTlJNx5fJPQbou8BOBqrGQZcwOeiWpO2XTfLkoks2Gv/vAVIv9K+UxgFx1\\nRjb8rsDyOi5lmTLAQo8w4CM\u003d\\n-----END PRIVATE KEY-----\\n\",\"client_email\": \"720396574373-sp2ekgkdsebdo93f9ld2asq89q2ejara@developer.gserviceaccount.com\",\"client_id\": \"720396574373-sp2ekgkdsebdo93f9ld2asq89q2ejara.apps.googleusercontent.com\",\"type\": \"service_account\"}" # <--- Replace with your GCE JSON key
+        default_zone: us-central1-a # <--- Replace with the GCE zone to use by default
+
+      agent:
+        mbus: nats://nats:nats@104.197.123.230:4222 # <--- Replace with the static IP
+        ntp: *ntp
+        blobstore:
+           options:
+             endpoint: http://104.197.123.230:25250 # <--- Replace with the static IP
+             user: agent
+             password: agent
+
+      registry:
+        host: 104.197.123.230 # <--- Replace with the static IP
+        username: registry
+        password: registry
+
+cloud_provider:
+  template:
+    name: cpi
+    release: bosh-google-cpi
+
+  ssh_tunnel:
+    host: 104.197.123.230 # <--- Replace with the static IP
+    port: 22
+    user: christopher # <--- Replace with the user corresponding to your private SSH key
+    private_key: /bosh-workspace/keys/connectedearthsciences-45616b2f61ce.p12 # <--- Replace with the location of your google_compute_engine SSH private key
+
+  mbus: https://mbus:mbus@104.197.123.230:6868 # <--- Replace with the static IP
+
+  properties:
+    google: *google_properties
+    agent:
+      mbus: https://mbus:mbus@0.0.0.0:6868
+      ntp: *ntp
+      blobstore:
+        provider: local
+        options:
+          blobstore_path: /var/vcap/micro_bosh/data/cache
